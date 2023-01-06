@@ -1,0 +1,259 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+
+metadata:
+  name: demo-cctts-tools
+  annotations:
+    workflows.argoproj.io/description: Demonstration of using Argo Workflows to process VRF data.
+    workflows.argoproj.io/version: '>= 3.3.0'
+  labels:
+    cctts-product: vrf
+
+spec:
+  # Metadata to attache to each run of these templates
+  workflowMetadata:
+    annotations:
+      workflows.argoproj.io/description: Demonstration of using Argo Workflows to process VRF data.
+      workflows.argoproj.io/version: '>= 3.3.0'
+    labels:
+      cctts-product: vrf
+  
+  # Credentials used for running the templates
+  serviceAccountName: argo-workflow
+  # imagePullSecrets:
+  #   - name: artifactory-prod
+
+  # Template definitions
+  templates:
+
+    - name: personalize-vrf
+      inputs:
+        parameters:
+          - name: vehicles-file
+          - name: persons-file
+          - name: vrf-joined-file
+          - name: data-folder
+            default: cctts
+        artifacts:
+          - name: vehicles
+            path: /app/vehicles.parquet
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vehicles-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+          - name: persons
+            path: /app/persons.parquet
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.persons-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      outputs:
+        artifacts:
+          - name: vrf
+            path: /app/vrf.parquet
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vrf-joined-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      container:
+        image: &cctts-img cctts:1.4
+        command: ["python"]
+        args: ["personalize.py"]
+    
+    - name: vindecoder
+      inputs:
+        parameters:
+          - name: vin
+          - name: data-folder
+            default: cctts
+      outputs:
+        artifacts:
+          - name: vindetails
+            path: /app/vins/{{ inputs.parameters.vin }}.json
+            archive:
+              none: {}
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/vins/{{ inputs.parameters.vin}}.json"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      container:
+        image: *cctts-img
+        command: ["python"]
+        args:
+          - "vin_to_json.py"
+          - "{{ inputs.parameters.vin }}"
+    
+    - name: vindump
+      inputs:
+        parameters:
+          - name: vrf-file
+          - name: data-folder
+            default: cctts
+        artifacts: 
+          - name: vrf
+            path: /app/vrf.parquet
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vrf-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      outputs:
+        parameters:
+          - name: vins
+            valueFrom:
+              default: "[]"
+              path: /app/vins.txt
+      container:
+        image: *cctts-img
+        command: ["python"]
+        args: ["vindump.py"]
+    
+    - name: vrf-vin-details
+      inputs:
+        parameters:
+          - name: vrf-file
+          - name: vin-details-file
+          - name: data-folder
+            default: cctts
+        artifacts:
+          - name: vrf
+            path: /app/vrf.parquet
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vrf-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+          - name: vin-details
+            path: /app/vindetails.json
+            mode: 0777
+            archive:
+              none: {}
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vin-details-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      outputs:
+        artifacts:
+          - name: vindetails
+            path: /app/vrf_detailed.parquet
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/vrf_vindetails.parquet"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      container:
+        image: *cctts-img
+        command: ["python"]
+        args: ["vrfdetails.py"]
+    
+    - name: aggregate
+      inputs:
+        parameters:
+          - name: vrf-file
+          - name: data-folder
+            default: cctts
+        artifacts: 
+          - name: vrf
+            path: /app/vrf.parquet
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/{{ inputs.parameters.vrf-file }}"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      outputs:
+        artifacts:
+          - name: cat-counts
+            path: /app/out/counts_by_category.parquet
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/aggs/counts_by_category.parquet"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+          - name: make-counts
+            path: /app/out/counts_by_make.parquet
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/aggs/counts_by_make.parquet"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      container:
+        image: *cctts-img
+        command: ["python"]
+        args: ["aggregate.py"]
+
