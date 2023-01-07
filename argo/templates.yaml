@@ -257,3 +257,54 @@ spec:
         command: ["python"]
         args: ["aggregate.py"]
 
+    - name: echo
+      inputs:
+        parameters:
+          - name: message
+      container:
+        image: argoproj/argosay:v2
+        command: [ sh, -c ]
+        args: 
+          - echo {{ inputs.parameters.message }}
+
+    - name: jsonconcat
+      inputs:
+        parameters:
+          - name: data-folder
+            default: cctts
+        artifacts:
+          - name: source-dir
+            path: /mnt/in
+            mode: 0777
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/vins"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      outputs:
+        artifacts:
+          - name: concat
+            path: /mnt/out/result.json
+            archive:
+              none: {}
+            s3:
+              key: "{{ inputs.parameters.data-folder }}/vindetails.json"
+              endpoint: osiris.local:9000
+              insecure: true
+              bucket: demo
+              accessKeySecret:
+                name: s3credential
+                key: identity
+              secretKeySecret:
+                name: s3credential
+                key: credential
+      container:
+        image: argoproj/argosay:v2
+        command: [ sh, -c ]
+        args: ["mkdir /mnt/out;awk '{print $0}' /mnt/in/*.json > /mnt/out/result.json"]
