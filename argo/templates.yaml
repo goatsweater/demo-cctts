@@ -18,6 +18,12 @@ spec:
     labels:
       cctts-product: vrf
   
+  artifactGC:
+    strategy: OnWorkflowDeletion
+  
+  ttlStrategy:
+    secondsAfterCompletion: 86400
+  
   # Credentials used for running the templates
   serviceAccountName: argo-workflow
   # imagePullSecrets:
@@ -29,6 +35,8 @@ spec:
         default: vehicles.parquet
       - name: persons-file
         default: persons.parquet
+  
+  entrypoint: vrf-processor
 
   # Template definitions
   templates:
