@@ -23,8 +23,78 @@ spec:
   # imagePullSecrets:
   #   - name: artifactory-prod
 
+  arguments:
+    parameters:
+      - name: vehicles-file
+        default: vehicles.parquet
+      - name: persons-file
+        default: persons.parquet
+
   # Template definitions
   templates:
+
+    - name: vrf-processor
+      dag:
+        tasks:
+          - name: personalize
+            template: personalize-vrf
+            arguments:
+              parameters:
+                - name: vehicles-file
+                  value: "{{ workflow.parameters.vehicles-file }}"
+                - name: persons-file
+                  value: "{{ workflow.parameters.persons-file }}"
+                - name: vrf-joined-file
+                  value: vrf.parquet
+          - name: extractvins
+            template: vindump
+            arguments:
+              parameters:
+                - name: vrf-file
+                  value: "{{ workflow.parameters.vehicles-file }}"
+          - name: decode-vin
+            template: vindecoder
+            depends: "extractvins"
+            arguments:
+              parameters:
+                - name: vin
+                  value: "{{=item}}"
+            withParam: "{{tasks.extractvins.outputs.parameters.vins}}"
+            # It's possible a VIN will be empty - don't try to decode that.
+            when: "{{=len(item)}} > 0"
+          - name: combine-vin-details
+            template: jsonconcat
+            depends: "decode-vin"
+          - name: join-vrf-vins
+            template: vrf-vin-details
+            depends: "combine-vin-details"
+            arguments:
+              parameters:
+                - name: vrf-file
+                  value: vrf.parquet
+                - name: vin-details-file
+                  value: vindetails.json
+          - name: calc-aggregates
+            template: aggregate
+            depends: "join-vrf-vins"
+            arguments:
+              parameters:
+                - name: vrf-file
+                  value: vrf_vindetails.parquet
+          - name: generate-codr
+            template: echo
+            arguments: 
+              parameters:
+                - name: message
+                  value: Generating CODR output
+            depends: "calc-aggregates"
+          - name: copy-data-to-loc
+            template: echo
+            arguments: 
+              parameters:
+                - name: message
+                  value: Copying CODR data to desired location
+            depends: "generate-codr"
 
     - name: personalize-vrf
       inputs:
@@ -79,7 +149,7 @@ spec:
                 name: s3credential
                 key: credential
       container:
-        image: &cctts-img cctts:1.4
+        image: &cctts-img cctts:1.5
         command: ["python"]
         args: ["personalize.py"]
     
@@ -93,6 +163,7 @@ spec:
         artifacts:
           - name: vindetails
             path: /app/vins/{{ inputs.parameters.vin }}.json
+            optional: true
             archive:
               none: {}
             s3:
