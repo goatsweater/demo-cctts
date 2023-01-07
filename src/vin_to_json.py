@@ -17,20 +17,24 @@ args = parser.parse_args()
 save_dir = Path('vins')
 save_dir.mkdir(exist_ok=True, parents=True)
 
-vin = Vin(args.vin)
-details = {
-    'checksum': vin.verify_checksum(),
-    'wmi': vin.wmi,
-    'vds': vin.vds,
-    'vis': vin.vis,
-    'manufacturer': vin.manufacturer,
-    'is_small': vin.manufacturer_is_small,
-    'region_code': vin.region_code,
-    'region': vin.region,
-    'country_code': vin.country_code,
-    'country': vin.country,
-    'vin': args.vin,
-}
+try:
+    vin = Vin(args.vin)
+except:
+    print(f"Invalid vin received: {args.vin}")
+else:
+    details = {
+        'checksum': vin.verify_checksum(),
+        'wmi': vin.wmi,
+        'vds': vin.vds,
+        'vis': vin.vis,
+        'manufacturer': vin.manufacturer,
+        'is_small': vin.manufacturer_is_small,
+        'region_code': vin.region_code,
+        'region': vin.region,
+        'country_code': vin.country_code,
+        'country': vin.country,
+        'vin': args.vin,
+    }
 
-outfile = save_dir.joinpath(f"{args.vin}.json")
-json.dump(details, outfile.open("w"))
+    outfile = save_dir.joinpath(f"{args.vin}.json")
+    json.dump(details, outfile.open("w"))
